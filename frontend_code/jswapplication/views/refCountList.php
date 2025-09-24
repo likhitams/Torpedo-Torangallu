@@ -1,0 +1,66 @@
+<?php $active=$this->uri->segment(1);
+$active1=$this->uri->segment(2);?>
+
+      <li role="button" data-toggle="collapse" href="#collapseExample" aria-expanded="false" aria-controls="collapseExample"><strong>Total Circulation</strong> <span class="count ornnew_c monospace"><?php echo count($resLadle = $this->master_db->runQuerySql("SELECT lm.LOAD_STATUS, lm.id, REPLACE(CONCAT(lm.ladleno,' ->',u.location),'*','') as ladleno FROM ladle_master lm LEFT JOIN units u ON u.registration=lm.ladleno where 1 and lm.cycle=1 and lm.companyid = 95 order by lm.id "));?></span></li>
+      <li role="button" data-toggle="collapse" href="#collapseExample" aria-expanded="false" aria-controls="collapseExample"><strong>Total Circulation</strong> <span class="count ornnew_c monospace"><?php echo count($resLadle = $this->master_db->runQuerySql("SELECT lm.LOAD_STATUS, lm.id, REPLACE(CONCAT(lm.ladleno,' ->',u.location),'*','') as ladleno FROM ladle_master lm LEFT JOIN units u ON u.registration=lm.ladleno where 1 and lm.cycle=1 and lm.companyid = 95 order by lm.id "));?></span></li>
+            <?php if(count($resLadle)){?>
+                <div class="collapse" id="collapseExample">
+                  <div class="well">
+                  <?php foreach ($resLadle as $r){
+                      if($r->LOAD_STATUS == 201 || $r->LOAD_STATUS == 202){
+                    ?>
+                    <li style="padding: 3px 9px !important;"><span class="load"><span class="dot"></span><?php echo $r->ladleno;?></span></li>
+          <?php }
+                  else{?>
+                    <li style="padding: 3px 9px !important;"><span class="empty"><span class="dot"></span><?php echo $r->ladleno;?></span></li>
+                  <?php }
+                  }?>
+                  </div>
+                </div>
+                <?php }?>
+          <li  role="button" data-toggle="collapse" href="#collapseExample1" aria-expanded="false" aria-controls="collapseExample1"><strong>LOCO</strong> <span class="count blue_c monospace"><?php echo count($resLoco = $this->master_db->runQuerySql("select REPLACE(CONCAT(unitname,' ->',location),'*','') as unitname from units where unitname like 'LOCO%' and companyid = 95 order by unitname "));?></span></li>
+              <?php if(count($resLoco)){?>
+                <div class="collapse" id="collapseExample1">
+                  <div class="well">
+                  <?php foreach ($resLoco as $r1){ ?>
+                    
+                    <li style="padding: 3px 9px !important;"><span class="loco"><span class="dot"></span><?php echo $r1->unitname;?></span></li>
+                  <?php  
+                  }?>
+                  </div>
+                </div>
+                <?php }?>
+            <li  role="button" data-toggle="collapse" href="#collapseExample2" aria-expanded="false" aria-controls="collapseExample2"><strong>Maintenance</strong> <span class="count orn_c monospace"><?php echo count($resmain = $this->master_db->runQuerySql("SELECT lm.LOAD_STATUS, lm.id, REPLACE(CONCAT(lm.ladleno,' ->',u.location),'*','') as unitname FROM ladle_master lm LEFT JOIN units u ON u.registration=lm.ladleno where 1 and lm.cycle=0 and lm.companyid =95 order by lm.id"));?></span></li>
+              <?php if(count($resmain)){?>
+                <div class="collapse" id="collapseExample2">
+                  <div class="well">
+                  <?php foreach ($resmain as $r2){ ?>
+                    
+                    <li style="padding: 3px 9px !important;"><span class="maintenance"><span class="dot"></span><?php echo $r2->unitname;?></span></li>
+                  <?php  
+                  }?>
+                  </div>
+                </div>
+                <?php }?>
+            
+            <li><strong>Loads</strong> <span class="count gren_c monospace"><?php echo count($this->master_db->runQuerySql("select id from ladle_master where LOAD_STATUS IN (201,202,205) and cycle=1 and companyid = 95 "));?></span></li>
+            <ol><li><strong>Before Weighment</strong> <!-- <span class="count gren_c monospace"> --><?php echo count($this->master_db->runQuerySql("select id from ladle_master where LOAD_STATUS=201 and cycle=1 and companyid = 95  "));?><!-- </span> --></li>
+            <li><strong>After  Weighment</strong> <span class="count gren_c monospace"><?php echo count($this->master_db->runQuerySql("select id from ladle_master where LOAD_STATUS IN (202,205) and cycle=1 and companyid = 95   "));?></span></li></ol></li>
+            <li><strong>Hot Metal on Wheel</strong> <span class="count gren_c monospace"><?php $tot = $this->master_db->runQuerySql("select SUM(NET_WEIGHT) NET_WEIGHT from ladle_master where LOAD_STATUS IN (202,205) and cycle=1 and companyid = 95 ");echo $tot[0]->NET_WEIGHT;?></span></li>
+            <li><strong>Empty</strong> <span class="count red_c monospace"><?php echo count($this->master_db->runQuerySql("select id from ladle_master where LOAD_STATUS IN (203,204) and cycle=1 and companyid = 95  "));?></span></li>
+           <ol> <li><strong>Steel Zone</strong> <span class="count red_c monospace"><?php echo count($this->master_db->runQuerySql("select id from ladle_master where LOAD_STATUS=203 and cycle=1  and companyid = 95 "));?></span></li>
+            <li><strong>Iron Zone</strong> <span class="count red_c monospace"><?php echo count($this->master_db->runQuerySql("select id from ladle_master where LOAD_STATUS=204 and cycle=1 and companyid = 95 "));?></span></li></ol>
+                 <li><strong>Metal & PROD (10PM to 10PM)</strong> </li>
+           <ol> <li role="button" data-toggle="modal"><strong>BF PRODUCTION</strong> <span class="count brown_c monospace" onclick="getBfProduction()";><?php  $bf =($this->master_db->runQuerySql("SELECT SUM(NET_WEIGHT)  BF_PROD   FROM laddle_report WHERE GROSS_DATE>=CONCAT(DATE_SUB(CURRENT_DATE , INTERVAL 1 DAY),' ','22:00:00')  "));echo $bf[0]->BF_PROD;?></span></li>
+           <li role="button" data-toggle="modal"><strong>SMS Received </strong> <span class="count brown_c monospace" onclick="getSmsMetal()";>
+       <?php  
+        $bf =($this->master_db->runQuerySql("SELECT SUM(NET_WEIGHT)  BF_PROD   FROM laddle_report WHERE GROSS_DATE>=CONCAT(DATE_SUB(CURRENT_DATE , INTERVAL 1 DAY),' ','22:00:00')  "));
+        $res_bf =$bf[0]->BF_PROD;
+         $tot = $this->master_db->runQuerySql("select SUM(NET_WEIGHT) NET_WEIGHT from ladle_master where LOAD_STATUS IN (202,205) and cycle=1 and companyid = 95 ");
+         $res_tot= $tot[0]->NET_WEIGHT;
+         
+         $result_sms=$res_bf - $res_tot;
+         echo $result_sms;
+             ?>
+       </span></li></ol> 
+            

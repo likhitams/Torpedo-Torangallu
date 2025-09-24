@@ -1,0 +1,980 @@
+<?php if ( ! defined('BASEPATH')) exit('No direct script access allowed');
+
+class tatsummary extends CI_Controller {
+
+    /**
+     * Index Page for this controller.
+     *
+     * Maps to the following URL
+     *         http://example.com/index.php/pthome
+     *    - or -  
+     *         http://example.com/index.php/blueadmin/index
+     *    - or -
+     * Since this controller is set as the default controller in 
+     * config/routes.php, it's displayed at http://example.com/
+     *
+     * So any other public methods not prefixed with an underscore will
+     * map to /index.php/pthome
+     <method_name>
+     * @see http://codeigniter.com/user_guide/general/urls.html
+     */
+     
+	protected $data;
+    public function __construct()
+    {
+        parent::__construct();
+        $this->load->helper('utility_helper');
+        $this->load->helper('cookie');
+        no_cache();
+        $this->load->model('grid_db');
+        $this->load->model('home_db');
+        $this->load->model('master_db');
+        $this->load->model('reports_db');
+        $this->load->model('main_model');
+        $this->data['detail'] = '';
+        $this->data['session'] = "user";
+        $this->data['session_pwd'] = "userpwd";
+        $this->data['session_data'] = "user";
+        $this->data['cookie'] = "jsw_user";
+        $this->data['cookie_pwd'] = "jsw_userpwd";
+		$cookie=get_cookie($this->data['cookie']);
+		$cookie_pwd=get_cookie($this->data['cookie_pwd']);
+        
+        if(!$this->session->userdata($this->data['session']) && $cookie=="")
+        {    
+            redirect('userlogin','refresh');
+        }
+        else
+        {
+        	$det = $this->home_db->checkSession($this->data['session'],$this->data['session_data'],$cookie, $cookie_pwd);
+        	//echo $this->db->last_query();exit;
+	       // print_r($det);
+        	if(count($det)>0){
+            	$this->data['detail']=$det;
+            	$this->session->set_userdata($this->data['session_data'], $det);
+            	$cookie = array(
+                   'name'   => $this->data['session'],
+                   'value'  => $det[0]->username,
+                   'expire' => 3600*24*7,
+                   'domain' => '.jsw',
+                   'path'   => '/',
+                   'prefix' => 'jsw_',
+               );
+				set_cookie($cookie); 
+				
+				$cookie = array(
+                   'name'   => $this->data['session_pwd'],
+                   'value'  => $det[0]->password,
+                   'expire' => 3600*24*7,
+                   'domain' => '.jsw',
+                   'path'   => '/',
+                   'prefix' => 'jsw_',
+               );
+				set_cookie($cookie); 
+	        }
+	        else{
+	        	$this->home_db->clearSession($this->data['session'],$this->data['session_data'],$this->data['session_pwd']);
+	            redirect('userlogin','refresh');
+	        }   
+        }   
+		$this->data['updatelogin']=$this->load->view('updatelogin', NULL , TRUE);
+		$this->data['refCountList']=$this->load->view('refCountList', NULL , TRUE);
+	    $this->data['header']=$this->load->view('header', $this->data , TRUE);
+		$this->data['left']=$this->load->view('left', NULL , TRUE);
+		$this->data['jsfile']=$this->load->view('jsfile', NULL , TRUE);	
+		$this->data['jsfileone']= "";
+
+		//GET varaibles common for all reports 
+		$this->data['unit'] = trim(preg_replace('!\s+!', '',$this->input->get('unit')));
+    	$this->data['group'] = trim(preg_replace('!\s+!', '',$this->input->get('group')));
+    	$this->data['checkAuto'] = trim(preg_replace('!\s+!', '',$this->input->get('checkAuto')));
+    	$this->data['start_date'] = trim(preg_replace('!\s+!', '',$this->input->get('start_date')));
+    	$this->data['start_time'] = trim(preg_replace('!\s+!', '',$this->input->get('start_time')));
+    	$this->data['end_date'] = trim(preg_replace('!\s+!', '',$this->input->get('end_date')));
+    	$this->data['end_time'] = trim(preg_replace('!\s+!', '',$this->input->get('end_time')));
+		
+		$this->load->library('Excel');
+        //load our new PHPExcel library
+        $this->load->library('excel');        
+		    
+		$this->data['styleArray'] = array(
+			'font'  => array(
+				'bold'  => true,
+				'size'  => 12,
+			)
+		);
+		
+		$this->data['styleArrayBorder'] = array(
+			  'borders' => array(
+				  'allborders' => array(
+					  'style' => PHPExcel_Style_Border::BORDER_THIN
+				  )
+			  )
+		);
+		
+		$this->excel->getDefaultStyle()->applyFromArray($this->data['styleArrayBorder']);
+		
+    }
+
+    public function index()
+    { 
+		$this->data['ladle_no']   = trim(htmlspecialchars($this->input->get("unit",TRUE)));
+		$this->data['start_date'] = trim(htmlspecialchars($this->input->get("start_date",TRUE)));
+		$this->data['end_date']   = trim(htmlspecialchars($this->input->get("end_date",TRUE)));
+		$this->data['start_time'] = trim(htmlspecialchars($this->input->get("start_time",TRUE)));
+		$this->data['end_time']   = trim(htmlspecialchars($this->input->get("end_time",TRUE)));
+		$this->data['is_refill']  = trim(htmlspecialchars($this->input->get("is_refill",TRUE)));
+		$this->data['mt_type']    = trim(htmlspecialchars($this->input->get("mt_type",TRUE)));
+		$db_arr = array('detail'=>$this->data['detail']);
+		
+		//$this->data['ladles'] = $res = $this->reports_db->get_ladlelist($db_arr);
+	
+		$this->load->view('tatsummary_view',$this->data);       
+    }
+
+	function getReport($isJson = 0){
+		
+		$ladle_no   = trim(htmlspecialchars($this->input->post("ladle_no",TRUE)));
+		$ladle_no   = str_replace("+"," ",$ladle_no);
+		$ladle_no   = is_numeric($ladle_no)?"":$ladle_no;
+		
+		$start_date = trim(htmlspecialchars($this->input->post("start_date",TRUE)));
+		$end_date   = trim(htmlspecialchars($this->input->post("end_date",TRUE)));
+		
+		$start_time = trim(htmlspecialchars($this->input->post("start_time",TRUE)));
+		$end_time   = trim(htmlspecialchars($this->input->post("end_time",TRUE)));
+		
+		$is_refill  = trim($this->input->post("is_refill",TRUE));
+		$is_refill  = is_numeric($is_refill)?$is_refill:"";
+		
+		$mt_type    = trim($this->input->post("mt_type",TRUE));
+		$mt_type    = is_numeric($mt_type)?$mt_type:"";
+		
+		$rowsArr = array();
+			
+		$where = " where 1 = 1";
+		
+		if($ladle_no != ""){
+			$where .= " and ts.ladleno = '$ladle_no'";
+		}
+		
+		if($start_date != ""){
+			$start_date = date("Y-m-d",strtotime($start_date));
+			$where .= " and ts.trip_start_dt >= '$start_date $start_time'";
+		}
+		
+		if($end_date != ""){
+			$end_date = date("Y-m-d",strtotime($end_date));
+			$where .= " and date(ts.trip_start_dt) <= '$end_date $end_time'";
+		}
+		
+		if($is_refill != ""){
+			$where .= " and ts.isRefil = '$is_refill' ";
+		}
+		
+		if($mt_type != ""){
+			if($mt_type == 5){				
+				$where .= " and gs.geofencename in ('BF1','BF2','Corex1','Corex2') ";
+			}else if($mt_type == 10){
+				$where .= " and gs.geofencename in ('BF3','BF4') ";				
+			}
+		}
+		
+		$qry = "select ts.trip_id,ts.ladleno ladle_no,gs.geofencename src,gd.geofencename dst,
+		ts.trip_start_dt entry_time,ts.trip_end_dt exit_time,ts.load_dt load_time,
+		ts.partial_load_dt part_time,ts.isRefil from tat_summary ts join geofences gs on 
+		gs.geofencenumber = ts.source_gf_id	join geofences gd on gd.geofencenumber = ts.dest_gf_id
+		$where order by ts.trip_start_dt";
+		
+		$res = $this->main_model->manRes($qry);
+		
+		if($res){
+			foreach($res as $r){
+				$trip_id            = $r->trip_id;
+				
+				$row = array();
+				$row["Ladle No."]   	   = $r->ladle_no;
+				$row["TRIP ID."]   	       = $r->trip_id;
+				$row["Trip Date"]    	   = date("d-m-Y",strtotime($r->entry_time));
+				$row["Source"] 		  	   = $r->src;
+				$row["Destination"]        = $r->dst;
+				$row["EMPTY WEIGHMENT WB"] = date("d-m-Y H:i:s",strtotime($r->entry_time));
+				
+				$loadTime				   = strtotime($r->load_time);
+				$partTime				   = strtotime($r->part_time);
+								
+				$where_refill = "";
+				if($is_refill){
+					$where_refill = " and td.isRefil = '$is_refill' ";
+				}
+				
+				$qry = "select td.id,gf.geofencename geofence,td.entry_dt entry_time,td.exit_dt exit_time,
+				td.in_gf_interval ingf_time,td.threshold_interval threshold,td.tat_breach_interval
+				brch_time,td.isRefil from tat_detail td join geofences gf on gf.geofencenumber = td.gf_id
+				where td.trip_id = '$trip_id' $where_refill order by td.entry_dt";
+				$det = $this->main_model->manRes($qry);
+				if($det){
+					$cc = 1;
+					$prevExit      = null;
+					$partialLoaded = false;
+					$isLoaded      = false;
+					foreach($det as $d){
+						$cc_prefix = "CC$cc$$";
+						
+						$geofence  = strtolower($d->geofence);
+						$geofence  = str_replace(" ","",$geofence);
+						$geofence  = str_replace("-","",$geofence);
+						$geofence  = str_replace("#","",$geofence);
+						
+						//$curEntry  = strtotime("-5 hours 30 mins", strtotime($d->entry_time));
+						//$curExit   = strtotime("-5 hours 30 mins", strtotime($d->exit_time));
+						
+						$curEntry  = strtotime($d->entry_time);
+						$curExit   = strtotime($d->exit_time);
+											
+						if($prevExit || $cc == 1){
+							if($trip_id == "60555141200824" && $d->id == 35933){
+								//echo $partTime > $prevExit ?"partial is greater than previous exit<br>":"partial is not greater than previous exit<br>";
+								//echo $partTime <= $curEntry ?"partial is less than or equal to curr entry<br>":"partial is not less than or equal to curr entry<br>";
+								//die;
+							}
+							
+							if($d->isRefil && !$partialLoaded && ($partTime >= $prevExit && ($partTime >= $curEntry || $partTime <= $curExit ))){
+								if($trip_id == "60555141200824" && $d->id == 35933 && 0){
+									echo "Prev Time ".date("d-m-Y H:i:s",$prevExit)."<br>";
+									echo "Part Time ".date("d-m-Y H:i:s",strtotime($r->part_time))."<br>";
+									echo "Curr Entry ".date("d-m-Y H:i:s",strtotime($d->entry_time))."<br>";
+									echo "Curr Exit ".date("d-m-Y H:i:s",strtotime($d->exit_time))."<br>";
+									
+									echo $partTime < $curEntry?"partTime is less than curEntry<br>":"partTime is not less than curEntry<br>";
+									echo $partTime <= $curExit?"partTime is less than or equal to curExit<br>":"partTime is not less than or equl
+									 to curExit<br>";
+									die;
+								}
+								
+								
+								if($partTime < $curEntry){									
+									$row["PARTIAL LOAD WEIGHMENT WB"]		  = date("d-m-Y H:i:s",strtotime($r->part_time));		
+									$row[$cc_prefix." ENTRY ".$d->geofence]   = date("H:i",strtotime($d->entry_time));
+									$row[$cc_prefix." EXIT ".$d->geofence]    = date("H:i",strtotime($d->exit_time));
+									$row[$cc_prefix." TIME AT ".$d->geofence] = $d->ingf_time. " min.";
+									$row[$cc_prefix." BREACH_TIME"] 		  = "BREACH_TIME ".$d->brch_time."_".$d->threshold;
+									
+									$partialLoaded = true;
+								}else if($partTime <= $curExit){										
+									$row[$cc_prefix." ENTRY ".$d->geofence]   = date("H:i",strtotime($d->entry_time));
+									$row["PARTIAL LOAD WEIGHMENT WB"]		  = date("d-m-Y H:i:s",strtotime($r->part_time));		
+									$row[$cc_prefix." EXIT ".$d->geofence]    = date("H:i",strtotime($d->exit_time));
+									$row[$cc_prefix." TIME AT ".$d->geofence] = $d->ingf_time. " min.";
+									$row[$cc_prefix." BREACH_TIME"] 		  = "BREACH_TIME ".$d->brch_time."_".$d->threshold;
+									
+									$partialLoaded = true;
+								}else if($partTime >= $curExit && 0){
+									$row[$cc_prefix." ENTRY ".$d->geofence]   = date("H:i",strtotime($d->entry_time));
+									$row[$cc_prefix." EXIT ".$d->geofence]    = date("H:i",strtotime($d->exit_time));
+									$row[$cc_prefix." TIME AT ".$d->geofence] = $d->ingf_time. " min.";
+									$row[$cc_prefix." BREACH_TIME"] 		  = "BREACH_TIME ".$d->brch_time."_".$d->threshold;
+									$row["PARTIAL LOAD WEIGHMENT WB"]		  = date("d-m-Y H:i:s",strtotime($r->part_time));		
+									
+									$partialLoaded = true;
+								}
+							}
+							
+							if(!$isLoaded && ($loadTime > $prevExit && ($loadTime <= $curEntry || $loadTime <= $curExit)) && ($partialLoaded || $d->isRefil == 0)){
+								$isLoaded = true;
+								if($loadTime < $curEntry){
+									$row["LOAD WEIGHMENT WB"]                 = date("d-m-Y H:i:s",strtotime($r->load_time));								
+									$row[$cc_prefix." ENTRY ".$d->geofence]   = date("H:i",strtotime($d->entry_time));
+									$row[$cc_prefix." EXIT ".$d->geofence]    = date("H:i",strtotime($d->exit_time));
+									$row[$cc_prefix." TIME AT ".$d->geofence] = $d->ingf_time. " min.";
+									$row[$cc_prefix." BREACH_TIME"] 		  = "BREACH_TIME ".$d->brch_time."_".$d->threshold;
+								}else if($loadTime <= $curExit){								
+									$row[$cc_prefix." ENTRY ".$d->geofence]   = date("H:i",strtotime($d->entry_time));
+									$row["LOAD WEIGHMENT WB"]                 = date("d-m-Y H:i:s",strtotime($r->load_time));								
+									$row[$cc_prefix." EXIT ".$d->geofence]    = date("H:i",strtotime($d->exit_time));
+									$row[$cc_prefix." TIME AT ".$d->geofence] = $d->ingf_time. " min.";
+									$row[$cc_prefix." BREACH_TIME"] 		  = "BREACH_TIME ".$d->brch_time."_".$d->threshold;
+								}else if($loadTime > $curExit){
+									$row[$cc_prefix." ENTRY ".$d->geofence]   = date("H:i",strtotime($d->entry_time));
+									$row[$cc_prefix." EXIT ".$d->geofence]    = date("H:i",strtotime($d->exit_time));
+									$row[$cc_prefix." TIME AT ".$d->geofence] = $d->ingf_time. " min.";
+									$row[$cc_prefix." BREACH_TIME"] 		  = "BREACH_TIME ".$d->brch_time."_".$d->threshold;
+									$row["LOAD WEIGHMENT WB"]                 = date("d-m-Y H:i:s",strtotime($r->load_time));								
+								}
+								continue;
+							}						
+						}
+						
+						$row[$cc_prefix." ENTRY ".$d->geofence]   = date("H:i",strtotime($d->entry_time));
+						$row[$cc_prefix." EXIT ".$d->geofence]    = date("H:i",strtotime($d->exit_time));
+						$row[$cc_prefix." TIME AT ".$d->geofence] = $d->ingf_time. " min.";
+						$row[$cc_prefix." BREACH_TIME"] 		  = "BREACH_TIME ".$d->brch_time."_".$d->threshold;
+												
+						$prevExit  = strtotime($d->exit_time);
+						
+						$cc++;
+					}
+					
+				}
+				
+				$row["EMPTY WEIGHMENT WB - END"] = date("d-m-Y H:i:s",strtotime($r->exit_time));
+				
+				$load_time  = strtotime($r->load_time);
+				$start_time = strtotime($r->entry_time);
+				$ironMaking = round(abs($load_time - $start_time) / 60,2);				
+				$row["IRON MAKING CYCLE"] = $ironMaking;
+				
+				$load_time   = strtotime($r->exit_time);
+				$start_time  = strtotime($r->load_time);
+				$steelMaking = round(abs($load_time - $start_time) / 60,2);				
+				$row["STEEL MAKING CYCLE"] = $steelMaking;
+				
+				$totalTat  		  = $ironMaking + $steelMaking;
+				$row["TOTAL TAT"] = $totalTat;
+								
+				if($det){					
+					$rowsArr[] = $row;
+				}
+
+			}			
+		}
+		
+		if($isJson){
+			return $rowsArr;
+		}else{			
+			echo json_encode($rowsArr);
+		}
+	}
+ 
+ 	function exportReportNew()
+	{		
+		$_POST['ladle_no'] = $this->input->post("unit",TRUE);
+
+		$res = $this->getReport(1);
+		if($res)
+		{									
+			$rc = 0;
+			$ri = 1;
+			$cc = 1;			
+			
+			$this->excel->setActiveSheetIndex(0);
+			$sheet = $this->excel->getActiveSheet();
+            //name the worksheet
+            $sheet->setTitle('Tat Summary Report');			
+			//$sheet->setCellValue("A1", "TAT Summary From To ");
+			
+			//$sheet->mergeCells("A1:E1");
+			//$sheet->getStyle("A1:E1")->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+						
+			//$ri++;
+			$ri++;
+			
+			$trip_count = 1;
+			foreach($res as $arr){
+				$COL = "A".$ri;							
+				$sheet->setCellValue($COL, "Trip #".$trip_count++);
+				
+				$ri++;
+				$cc = 1;
+				
+				foreach($arr as $key => $val){
+					$key = str_replace(" - END","",$key);
+					$val = str_replace("BREACH_TIME ","",$val);
+					$tmp = explode("$$",$key);
+					
+					$key = count($tmp) > 1?$tmp[1]:$tmp[0];
+					
+					$key = trim($key);
+					$val = trim($val);
+					
+					if($key == "BREACH_TIME"){
+						$tmp = explode("_",$val);
+						
+						$breach_time = $tmp[0];
+						$breach_time = is_numeric($breach_time)?$breach_time:0;
+						
+						if($breach_time > 0){
+							$COL1 = $this->getCol($cc-3).$ri;				
+							$COL2 = $this->getCol($cc-1).$ri;			
+							
+							$sheet->getStyle("$COL1:$COL2")
+							->getFill()
+							->setFillType(PHPExcel_Style_Fill::FILL_SOLID)
+							->getStartColor()
+							->setRGB('FF0000');	
+							
+							$sheet->getStyle("$COL1:$COL2")
+							->getFont()
+							->getColor()
+							->setRGB('FFFFFF');
+						
+							$COL1 = $this->getCol($cc-3).($ri+1);				
+							$COL2 = $this->getCol($cc-1).($ri+1);			
+							
+							$sheet->getStyle("$COL1:$COL2")
+							->getFill()
+							->setFillType(PHPExcel_Style_Fill::FILL_SOLID)
+							->getStartColor()
+							->setRGB('FF0000');	
+							
+							$sheet->getStyle("$COL1:$COL2")
+							->getFont()
+							->getColor()
+							->setRGB('FFFFFF');
+						}						
+						continue;
+					}
+					
+					$COL   = $this->getCol($cc).$ri;							
+					$sheet->setCellValue($COL, $key);
+					$refArr = array("EMPTY WEIGHMENT WB","LOAD WEIGHMENT WB","PARTIAL LOAD WEIGHMENT WB");
+                    
+					 if(in_array($key,$refArr)){	
+						$sheet->getStyle($COL)
+						->getFill()
+						->setFillType(PHPExcel_Style_Fill::FILL_SOLID)
+						->getStartColor()
+						->setRGB('FFFF00');					
+					}
+					
+					if($key == "IRON MAKING CYCLE"){	
+						$sheet->getStyle($COL)
+						->getFill()
+						->setFillType(PHPExcel_Style_Fill::FILL_SOLID)
+						->getStartColor()
+						->setRGB('602F2F');
+						
+						$sheet->getStyle($COL)
+						->getFont()
+						->getColor()
+						->setRGB('FFFFFF');
+					}
+					
+					if($key == "STEEL MAKING CYCLE"){	
+						$sheet->getStyle($COL)
+						->getFill()
+						->setFillType(PHPExcel_Style_Fill::FILL_SOLID)
+						->getStartColor()
+						->setRGB('C0C0C0');
+						
+						$sheet->getStyle($COL)
+						->getFont()
+						->getColor()
+						->setRGB('FFFFFF');
+					}
+					
+					if($key == "TOTAL TAT"){	
+						$sheet->getStyle($COL)
+						->getFill()
+						->setFillType(PHPExcel_Style_Fill::FILL_SOLID)
+						->getStartColor()
+						->setRGB('339933');
+						
+						$sheet->getStyle($COL)
+						->getFont()
+						->getColor()
+						->setRGB('FFFFFF');
+					}
+					
+					$COL   = $this->getCol($cc).($ri+1);							
+					$sheet->setCellValue($COL, $val);
+				
+					$refArr = array("EMPTY WEIGHMENT WB","LOAD WEIGHMENT WB","PARTIAL LOAD WEIGHMENT WB");
+					if(in_array($key,$refArr)){	
+						$sheet->getStyle($COL)
+						->getFill()
+						->setFillType(PHPExcel_Style_Fill::FILL_SOLID)
+						->getStartColor()
+						->setRGB('FFFF00');
+					}
+					
+					if($key == "IRON MAKING CYCLE"){	
+						$sheet->getStyle($COL)
+						->getFill()
+						->setFillType(PHPExcel_Style_Fill::FILL_SOLID)
+						->getStartColor()
+						->setRGB('602F2F');
+						
+						$sheet->getStyle($COL)
+						->getFont()
+						->getColor()
+						->setRGB('FFFFFF');
+					}
+					
+					if($key == "STEEL MAKING CYCLE"){	
+						$sheet->getStyle($COL)
+						->getFill()
+						->setFillType(PHPExcel_Style_Fill::FILL_SOLID)
+						->getStartColor()
+						->setRGB('C0C0C0');
+						
+						$sheet->getStyle($COL)
+						->getFont()
+						->getColor()
+						->setRGB('FFFFFF');
+					}
+					
+					if($key == "TOTAL TAT"){	
+						$sheet->getStyle($COL)
+						->getFill()
+						->setFillType(PHPExcel_Style_Fill::FILL_SOLID)
+						->getStartColor()
+						->setRGB('339933');
+						
+						$sheet->getStyle($COL)
+						->getFont()
+						->getColor()
+						->setRGB('FFFFFF');
+					}
+										
+					$cc++;
+				}
+				
+				$COL1 = "A".$ri;			
+				$COL2 = $this->getCol($cc-1).($ri+1);				
+				
+				$sheet->getStyle("$COL1:$COL2")->getBorders()->getTop()->setBorderStyle(PHPExcel_Style_Border::BORDER_THICK);				
+				$sheet->getStyle("$COL1:$COL2")->getBorders()->getBottom()->setBorderStyle(PHPExcel_Style_Border::BORDER_THICK);				
+				$sheet->getStyle("$COL1:$COL2")->getBorders()->getLeft()->setBorderStyle(PHPExcel_Style_Border::BORDER_THICK);				
+				$sheet->getStyle("$COL1:$COL2")->getBorders()->getRight()->setBorderStyle(PHPExcel_Style_Border::BORDER_THICK);				
+								
+				$ri++;
+				$ri++;
+				$ri++;
+			}
+			
+			$d = new DateTime();
+			
+			header('Content-Type: application/vnd.ms-excel'); //mime type
+            header('Content-Disposition: attachment;filename="'.$d->getTimestamp().'-TatSummaryReport.xls"'); //tell browser what's the file name
+            header('Cache-Control: max-age=0'); //no cache
+            
+			$objWriter = PHPExcel_IOFactory::createWriter($this->excel, 'Excel5');
+            $objWriter->save('php://output');			
+		}
+	}
+	
+	function exportReport()
+	{		
+		$_POST['ladle_no'] = $this->input->post("unit",TRUE);
+
+		$res = $this->getReport(1);
+		if($res)
+		{
+			$str = " ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+			$cnt = 20;		
+			$clc = 1;
+			$col_arr = array();		
+			for($i=1;$i<=$cnt;$i++){
+				$chc = 1;
+				$pfx = trim($str[$i-1]);
+				for($j=0;$j<26;$j++){				
+					$col_arr[$clc++] = $pfx.$str[$chc++];
+				}
+			}
+						
+			$rc = 0;
+			$ri = 1;
+			$cc = 1;			
+			
+			$this->excel->setActiveSheetIndex(0);
+			$sheet = $this->excel->getActiveSheet();
+            //name the worksheet
+            $sheet->setTitle('Tat Summary Report');			
+			//$sheet->setCellValue("A1", "TAT Summary From To ");
+			
+			//$sheet->mergeCells("A1:E1");
+			//$sheet->getStyle("A1:E1")->getAlignment()->setHorizontal(PHPExcel_Style_Alignment::HORIZONTAL_CENTER);
+						
+			//$ri++;
+			$ri++;
+			
+			$trip_count = 1;
+			foreach($res as $arr){
+				$COL = "A".$ri;							
+				$sheet->setCellValue($COL, "Trip #".$trip_count++);
+				
+				$ri++;
+				$cc = 1;
+				
+				foreach($arr as $key => $val){
+					$key = str_replace(" - END","",$key);
+					$val = str_replace("BREACH_TIME ","",$val);
+					$tmp = explode("$$",$key);
+					
+					$key = count($tmp) > 1?$tmp[1]:$tmp[0];
+					
+					$key = trim($key);
+					$val = trim($val);
+					
+					if($key == "BREACH_TIME"){
+						$tmp = explode("_",$val);
+						
+						$breach_time = $tmp[0];
+						$breach_time = is_numeric($breach_time)?$breach_time:0;
+						
+						if($breach_time > 0){
+							$COL1 = $col_arr[$cc-3].$ri;				
+							$COL2 = $col_arr[$cc-1].$ri;			
+							
+							$sheet->getStyle("$COL1:$COL2")
+							->getFill()
+							->setFillType(PHPExcel_Style_Fill::FILL_SOLID)
+							->getStartColor()
+							->setRGB('FF0000');	
+							
+							$sheet->getStyle("$COL1:$COL2")
+							->getFont()
+							->getColor()
+							->setRGB('FFFFFF');
+						
+							$COL1 = $col_arr[$cc-3].($ri+1);				
+							$COL2 = $col_arr[$cc-1].($ri+1);			
+							
+							$sheet->getStyle("$COL1:$COL2")
+							->getFill()
+							->setFillType(PHPExcel_Style_Fill::FILL_SOLID)
+							->getStartColor()
+							->setRGB('FF0000');	
+							
+							$sheet->getStyle("$COL1:$COL2")
+							->getFont()
+							->getColor()
+							->setRGB('FFFFFF');
+						}						
+						continue;
+					}
+					
+					$COL   = $col_arr[$cc].$ri;							
+					$sheet->setCellValue($COL, $key);
+					$refArr = array("EMPTY WEIGHMENT WB","LOAD WEIGHMENT WB","PARTIAL LOAD WEIGHMENT WB");
+                    
+					 if(in_array($key,$refArr)){	
+						$sheet->getStyle($COL)
+						->getFill()
+						->setFillType(PHPExcel_Style_Fill::FILL_SOLID)
+						->getStartColor()
+						->setRGB('FFFF00');					
+					}
+					
+					if($key == "IRON MAKING CYCLE"){	
+						$sheet->getStyle($COL)
+						->getFill()
+						->setFillType(PHPExcel_Style_Fill::FILL_SOLID)
+						->getStartColor()
+						->setRGB('602F2F');
+						
+						$sheet->getStyle($COL)
+						->getFont()
+						->getColor()
+						->setRGB('FFFFFF');
+					}
+					
+					if($key == "STEEL MAKING CYCLE"){	
+						$sheet->getStyle($COL)
+						->getFill()
+						->setFillType(PHPExcel_Style_Fill::FILL_SOLID)
+						->getStartColor()
+						->setRGB('C0C0C0');
+					}
+					
+					if($key == "TOTAL TAT"){	
+						$sheet->getStyle($COL)
+						->getFill()
+						->setFillType(PHPExcel_Style_Fill::FILL_SOLID)
+						->getStartColor()
+						->setRGB('339933');
+						
+						$sheet->getStyle($COL)
+						->getFont()
+						->getColor()
+						->setRGB('FFFFFF');
+					}
+					
+					$COL   = $col_arr[$cc].($ri+1);							
+					$sheet->setCellValue($COL, $val);
+				
+					$refArr = array("EMPTY WEIGHMENT WB","LOAD WEIGHMENT WB","PARTIAL LOAD WEIGHMENT WB");
+					if(in_array($key,$refArr)){	
+						$sheet->getStyle($COL)
+						->getFill()
+						->setFillType(PHPExcel_Style_Fill::FILL_SOLID)
+						->getStartColor()
+						->setRGB('FFFF00');
+					}
+					
+					if($key == "IRON MAKING CYCLE"){	
+						$sheet->getStyle($COL)
+						->getFill()
+						->setFillType(PHPExcel_Style_Fill::FILL_SOLID)
+						->getStartColor()
+						->setRGB('602F2F');
+						
+						$sheet->getStyle($COL)
+						->getFont()
+						->getColor()
+						->setRGB('FFFFFF');
+					}
+					
+					if($key == "STEEL MAKING CYCLE"){	
+						$sheet->getStyle($COL)
+						->getFill()
+						->setFillType(PHPExcel_Style_Fill::FILL_SOLID)
+						->getStartColor()
+						->setRGB('C0C0C0');
+					}
+					
+					if($key == "TOTAL TAT"){	
+						$sheet->getStyle($COL)
+						->getFill()
+						->setFillType(PHPExcel_Style_Fill::FILL_SOLID)
+						->getStartColor()
+						->setRGB('339933');
+						
+						$sheet->getStyle($COL)
+						->getFont()
+						->getColor()
+						->setRGB('FFFFFF');
+					}
+					
+					$cc++;
+				}
+				
+				$COL1 = "A".$ri;			
+				$COL2 = $col_arr[$cc-1].($ri+1);				
+				
+				$sheet->getStyle("$COL1:$COL2")->getBorders()->getTop()->setBorderStyle(PHPExcel_Style_Border::BORDER_THICK);				
+				$sheet->getStyle("$COL1:$COL2")->getBorders()->getBottom()->setBorderStyle(PHPExcel_Style_Border::BORDER_THICK);				
+				$sheet->getStyle("$COL1:$COL2")->getBorders()->getLeft()->setBorderStyle(PHPExcel_Style_Border::BORDER_THICK);				
+				$sheet->getStyle("$COL1:$COL2")->getBorders()->getRight()->setBorderStyle(PHPExcel_Style_Border::BORDER_THICK);				
+								
+				$ri++;
+				$ri++;
+				$ri++;
+			}
+			
+			$d = new DateTime();
+			
+			header('Content-Type: application/vnd.ms-excel'); //mime type
+            header('Content-Disposition: attachment;filename="'.$d->getTimestamp().'-TatDetailsReport.xls"'); //tell browser what's the file name
+            header('Cache-Control: max-age=0'); //no cache
+            
+			$objWriter = PHPExcel_IOFactory::createWriter($this->excel, 'Excel5');
+            $objWriter->save('php://output');			
+		}
+	}
+
+	function getCol($cc = 0){
+		if($cc > 0){
+			$str = " ABCDEFGHIJKLMNOPQRSTUVWXYZ";	
+			if($cc <= 26){
+				return $str[$cc];
+			}else{
+				$ind_1 = (int) round($cc / 26);
+				$ind_2 = (int) (26 * $ind_1) - $cc;
+				$ind_2 = $ind_2 > 0 ? $ind_2 : 26;
+				
+				return $str[$ind_1].$str[$ind_2];
+			}
+		}
+	}
+
+    public function summary()
+    { 
+		$this->data['ladle_no']   = trim(htmlspecialchars($this->input->get("unit",TRUE)));
+		$this->data['start_date'] = trim(htmlspecialchars($this->input->get("start_date",TRUE)));
+		$this->data['end_date']   = trim(htmlspecialchars($this->input->get("end_date",TRUE)));
+		$this->data['start_time'] = trim(htmlspecialchars($this->input->get("start_time",TRUE)));
+		$this->data['end_time']   = trim(htmlspecialchars($this->input->get("end_time",TRUE)));
+		$this->data['is_refill']  = trim(htmlspecialchars($this->input->get("is_refill",TRUE)));
+		$this->data['mt_type']    = trim(htmlspecialchars($this->input->get("mt_type",TRUE)));
+		
+		$db_arr = array('detail'=>$this->data['detail']);
+
+		$this->load->view('tatsummary_reportnew',$this->data);       
+    }
+	
+	function getSummaryReport($isJson = 0){
+		$ladle_no   = trim(htmlspecialchars($this->input->post("ladle_no",TRUE)));
+		$ladle_no   = str_replace("+"," ",$ladle_no);
+		$ladle_no   = is_numeric($ladle_no)?"":$ladle_no;
+				
+		$start_date = trim(htmlspecialchars($this->input->post("start_date",TRUE)));
+		$end_date   = trim(htmlspecialchars($this->input->post("end_date",TRUE)));
+		
+		$start_time = trim(htmlspecialchars($this->input->post("start_time",TRUE)));
+		$end_time   = trim(htmlspecialchars($this->input->post("end_time",TRUE)));
+		
+		$is_refill  = trim($this->input->post("is_refill",TRUE));
+		$is_refill  = is_numeric($is_refill)?$is_refill:"";
+		
+		$mt_type    = trim($this->input->post("mt_type",TRUE));
+		$mt_type    = is_numeric($mt_type)?$mt_type:"";
+		
+		$rowsArr = array();
+			
+		$where = " where 1 = 1";
+		
+		if($ladle_no != ""){
+			$where .= " and ts.ladleno = '$ladle_no'";
+		}
+
+		if($start_date != ""){
+			$start_date = date("Y-m-d",strtotime($start_date));
+			$where .= " and ts.trip_start_dt >= '$start_date $start_time'";
+		}
+		
+		if($end_date != ""){
+			$end_date = date("Y-m-d",strtotime($end_date));
+			$where .= " and date(ts.trip_start_dt) <= '$end_date $end_time'";
+		}
+		
+		if($is_refill != ""){
+			$where .= " and ts.isRefil = '$is_refill' ";
+		}
+		
+		if($mt_type != ""){
+			if($mt_type == 5){				
+				$where .= " and gs.geofencename in ('BF1','BF2','Corex1','Corex2') ";
+			}else if($mt_type == 10){
+				$where .= " and gs.geofencename in ('BF3','BF4') ";				
+			}
+		}
+		
+		$qry = "select ts.trip_id,ts.ladleno ladle_no,gs.geofencename src,gd.geofencename dst,
+		ts.trip_start_dt entry_time,ts.trip_end_dt exit_time,ts.load_dt load_time,
+		ts.partial_load_dt part_time,ts.TARE_WEIGHT,ts.GROSS_WEIGHT,ts.NET_WEIGHT,ts.TARE_WT2,ts.NET_WT2,ts.isRefil from tat_summary ts join geofences gs on 
+		gs.geofencenumber = ts.source_gf_id	join geofences gd on gd.geofencenumber = ts.dest_gf_id
+		$where order by ts.trip_start_dt";
+		
+		$res = $this->main_model->manRes($qry);
+		
+		if($res){
+			foreach($res as $r){
+				$trip_id              = $r->trip_id;
+				
+				$row = array();
+				
+				$row["ladle_no"]      = $r->ladle_no;
+				$row["trip_id"]   	  = $r->trip_id;
+				$row["source"] 		  = $r->src;
+				$row["destination"]   = $r->dst;
+				$row["trip_start"]    = date("d-m-Y H:i:s",strtotime($r->entry_time));
+				$row["partial_load"]  = $r->part_time?date("d-m-Y H:i:s",strtotime($r->part_time)):"";
+				$row["load_time"]     = $r->load_time?date("d-m-Y H:i:s",strtotime($r->load_time)):"";
+				$row["trip_end"]      = $r->exit_time?date("d-m-Y H:i:s",strtotime($r->exit_time)):"";
+				$row["tare_weight"]   = round($r->TARE_WEIGHT,2);
+				$row["gross_weight"]  = round($r->GROSS_WEIGHT,2);
+				$row["net_weight"]    = round($r->NET_WEIGHT,2);
+				$row["tare_weight2"]  = round($r->TARE_WT2,2);
+				$row["net_weight2"]   = round($r->NET_WT2,2);
+				$row["is_refill"]     = $r->isRefil?"Yes":"No";
+			
+				$rowsArr[] 			  = $row;
+			}			
+		}
+		
+		if($isJson){
+			return $rowsArr;
+		}else{			
+			echo json_encode($rowsArr);
+		}
+	}	
+
+	function exportSummaryReport()
+	{		
+		$_POST['ladle_no'] = $this->input->post("unit",TRUE);
+
+		$res = $this->getSummaryReport(1);
+		if($res)
+		{
+			$str = " ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+			$cnt = 2;		
+			$clc = 1;
+			$col_arr = array();		
+			for($i=1;$i<=$cnt;$i++){
+				$chc = 1;
+				$pfx = trim($str[$i-1]);
+				for($j=0;$j<26;$j++){				
+					$col_arr[$clc++] = $pfx.$str[$chc++];
+				}
+			}
+						
+			$rc = 0;
+			$ri = 1;
+			$cc = 1;			
+			
+			$this->excel->setActiveSheetIndex(0);
+			$sheet = $this->excel->getActiveSheet();
+			
+			$COL = $col_arr[$cc++].$ri;					
+			$sheet->setCellValue($COL, "Torpedo");
+			
+			$COL = $col_arr[$cc++].$ri;					
+			$sheet->setCellValue($COL, "Source");
+			
+			$COL = $col_arr[$cc++].$ri;					
+			$sheet->setCellValue($COL, "Destination");
+			
+			$COL = $col_arr[$cc++].$ri;					
+			$sheet->setCellValue($COL, "Trip Start");
+
+			$COL = $col_arr[$cc++].$ri;					
+			$sheet->setCellValue($COL, "Partial Load");
+			
+			$COL = $col_arr[$cc++].$ri;					
+			$sheet->setCellValue($COL, "Load Time");
+			
+			$COL = $col_arr[$cc++].$ri;					
+			$sheet->setCellValue($COL, "Trip End");
+			
+			$COL = $col_arr[$cc++].$ri;					
+			$sheet->setCellValue($COL, "Tare Weight");
+			
+			$COL = $col_arr[$cc++].$ri;					
+			$sheet->setCellValue($COL, "Gross Weight");
+			
+			$COL = $col_arr[$cc++].$ri;					
+			$sheet->setCellValue($COL, "Net Weight");
+			
+			$COL = $col_arr[$cc++].$ri;					
+			$sheet->setCellValue($COL, "Tare Weight2");
+			
+			$COL = $col_arr[$cc++].$ri;					
+			$sheet->setCellValue($COL, "Net Weight2");
+			
+			$COL = $col_arr[$cc++].$ri;					
+			$sheet->setCellValue($COL, "Is Refill");
+			
+			$sheet->getStyle("A1:$COL")->getFont()->setBold(true);
+			
+			$ri++;
+			
+			foreach($res as $arr){
+				$cc = 1;				
+				
+				foreach($arr as $key => $val){
+					if($key == "trip_id"){
+						continue;
+					}
+					
+					$COL = $col_arr[$cc++].$ri;					
+					$sheet->setCellValue($COL, $val);					
+				}
+				
+				$ri++;
+			}
+			
+			$d = new DateTime();
+			
+			header('Content-Type: application/vnd.ms-excel'); //mime type
+            header('Content-Disposition: attachment;filename="'.$d->getTimestamp().'-TatSummaryReport.xls"'); //tell browser what's the file name
+            header('Cache-Control: max-age=0'); //no cache
+            
+			$objWriter = PHPExcel_IOFactory::createWriter($this->excel, 'Excel5');
+            $objWriter->save('php://output');			
+		}
+	}
+}
+
+
